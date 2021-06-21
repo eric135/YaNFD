@@ -29,6 +29,7 @@ const fdPattern = "^(?P<scheme>fd)://(?P<fd>[0-9]+)$"
 const ipv4Pattern = "^((25[0-4]|2[0-4][0-9]|1[0-9][0-9]|[0-9][0-9]|[0-9])\\.){3}(25[0-4]|2[0-4][0-9]|1[0-9][0-9]|[0-9][0-9]|[0-9])$"
 const macPattern = "^(([0-9a-fA-F]){2}:){5}([0-9a-fA-F]){2}$"
 const udpPattern = "^(?P<scheme>udp[46]?)://\\[?(?P<host>[0-9A-Za-z\\:\\.\\-]+)(%(?P<zone>[A-Za-z0-9\\-]+))?\\]?:(?P<port>[0-9]+)$"
+const tcpPattern = "^(?P<scheme>tcp[46]?)://\\[?(?P<host>[0-9A-Za-z\\:\\.\\-]+)(%(?P<zone>[A-Za-z0-9\\-]+))?\\]?:(?P<port>[0-9]+)$"
 const unixPattern = "^(?P<scheme>unix)://(?P<path>[/\\\\A-Za-z0-9\\.\\-_]+)$"
 
 const (
@@ -120,6 +121,17 @@ func MakeUDPFaceURI(ipVersion int, host string, port uint16) *URI {
 	return uri
 }
 
+// MakeTCPFaceURI constructs a URI for a TCP face.
+func MakeTCPFaceURI(ipVersion int, host string, port uint16) *URI {
+	uri := new(URI)
+	uri.URIType = tcpURI
+	uri.scheme = "tcp" + strconv.Itoa(ipVersion)
+	uri.path = host
+	uri.port = port
+	uri.Canonize()
+	return uri
+}
+
 // MakeUnixFaceURI constructs a URI for a Unix face.
 func MakeUnixFaceURI(path string) *URI {
 	uri := new(URI)
@@ -202,6 +214,28 @@ func DecodeURIString(str string) *URI {
 		u.scheme = "udp"
 
 		regex, err := regexp.Compile(udpPattern)
+		if err != nil {
+			return u
+		}
+
+		matches := regex.FindStringSubmatch(str)
+		if regex.SubexpIndex("host") < 0 || len(matches) <= regex.SubexpIndex("host") || regex.SubexpIndex("port") < 0 || len(matches) <= regex.SubexpIndex("port") {
+			return u
+		}
+		u.path = matches[regex.SubexpIndex("host")]
+		if regex.SubexpIndex("zone") < 0 || len(matches) >= regex.SubexpIndex("zone") && matches[regex.SubexpIndex("zone")] != "" {
+			u.path += "%" + matches[regex.SubexpIndex("zone")]
+		}
+		port, err := strconv.Atoi(matches[regex.SubexpIndex("port")])
+		if err != nil || port <= 0 || port > 65535 {
+			return u
+		}
+		u.port = uint16(port)
+	} else if strings.EqualFold("tcp", schemeSplit[0]) || strings.EqualFold("tcp4", schemeSplit[0]) || strings.EqualFold("tcp6", schemeSplit[0]) {
+		u.URIType = tcpURI
+		u.scheme = "tcp"
+
+		regex, err := regexp.Compile(tcpPattern)
 		if err != nil {
 			return u
 		}
